@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{color-scheme:light}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>PID Tuning Lab</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=Source+Sans+3:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a bench instrument. Controls on the left, scope trace on the right, readouts and s-plane underneath. */
+:root{
+  --bg:#f6f5f3; --panel:#ffffff; --ink:#24191a; --muted:#6c6162; --line:#e3dedc;
+  --maroon:#501214; --gold:#8d734a; --goldsoft:#efe7d8; --ref:#9a9192;
+  --pin:#7d8fa0; --good:#2e7d4f; --warn:#b26a00; --bad:#b3261e; --rhp:rgba(179,38,30,.08);
+  --trace:#501214; --grid:#ece8e6;
+  --display:"Archivo",system-ui,sans-serif; --body:"Source Sans 3",system-ui,sans-serif; --mono:"JetBrains Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#161212; --panel:#1f1a1a; --ink:#f1ebea; --muted:#ab9f9e; --line:#352d2d;
+  --maroon:#e7a0a2; --gold:#d4b98a; --goldsoft:#2d2720; --ref:#7b7172; --pin:#8fa5b8;
+  --good:#6fcf97; --warn:#f2b55a; --bad:#ff8a80; --rhp:rgba(255,138,128,.10); --trace:#f08d90; --grid:#2a2323; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#161212; --panel:#1f1a1a; --ink:#f1ebea; --muted:#ab9f9e; --line:#352d2d;
+  --maroon:#e7a0a2; --gold:#d4b98a; --goldsoft:#2d2720; --ref:#7b7172; --pin:#8fa5b8;
+  --good:#6fcf97; --warn:#f2b55a; --bad:#ff8a80; --rhp:rgba(255,138,128,.10); --trace:#f08d90; --grid:#2a2323; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.45}
+.wrap{max-width:1180px;margin:0 auto;padding-block:20px 40px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:18px}
+header h1{font-family:var(--display);font-weight:800;font-size:1.9rem;margin:0;color:var(--maroon);letter-spacing:-.01em;text-wrap:balance}
+header p{margin:.25rem 0 0;color:var(--muted);max-width:68ch}
+.main{display:grid;grid-template-columns:330px minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:860px){.main{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;min-width:0}
+.label{font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:0 0 6px}
+select{width:100%;font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.tf{font-family:var(--mono);font-size:.85rem;color:var(--muted);margin:8px 0 0;overflow-x:auto;white-space:nowrap}
+.gain{display:grid;grid-template-columns:44px minmax(0,1fr) 76px;gap:10px;align-items:center;margin-top:14px}
+.gain b{font-family:var(--display);font-size:1.05rem;color:var(--maroon)}
+.gain .what{grid-column:2/4;font-size:.82rem;color:var(--muted);margin-top:-8px}
+input[type=range]{width:100%;accent-color:var(--maroon)}
+input[type=number]{width:100%;font-family:var(--mono);font-size:.9rem;padding:5px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);text-align:right}
+.presets{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+button{font:inherit;font-size:.88rem;cursor:pointer;border-radius:999px;padding:6px 12px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+button:hover{border-color:var(--gold)}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+button.primary{background:var(--maroon);color:var(--panel);border-color:var(--maroon);font-weight:600}
+.sect{border-top:1px solid var(--line);margin-top:16px;padding-top:14px}
+.ctrl{font-family:var(--mono);font-size:.85rem;background:var(--goldsoft);border-radius:8px;padding:8px 10px;margin-top:8px;overflow-x:auto;white-space:pre}
+.scope-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:8px}
+.scope-head h2{font-family:var(--display);font-size:1.1rem;margin:0}
+.status{font-weight:700;font-size:.85rem;padding:3px 10px;border-radius:999px;border:1px solid currentColor}
+.status.ok{color:var(--good)} .status.marg{color:var(--warn)} .status.bad{color:var(--bad)}
+canvas{display:block;width:100%;max-width:100%}
+#scope{aspect-ratio:16/8.2;margin-top:8px}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:.85rem;color:var(--muted);margin-top:6px}
+.legend i{display:inline-block;width:22px;height:0;border-top:3px solid var(--trace);vertical-align:middle;margin-right:6px}
+.legend i.ref{border-top:2px dashed var(--ref)} .legend i.pin{border-top:2.5px dashed var(--pin)}
+.lower{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:18px}
+@media (max-width:860px){.lower{grid-template-columns:minmax(0,1fr)}}
+.tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.tile{border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.tile .v{font-family:var(--mono);font-size:1.35rem;font-weight:600;font-variant-numeric:tabular-nums}
+.tile .d{font-family:var(--mono);font-size:.8rem;color:var(--muted);min-height:1.1em}
+.tile .d.up{color:var(--bad)} .tile .d.down{color:var(--good)}
+.poles{font-family:var(--mono);font-size:.85rem;color:var(--muted);margin-top:8px;font-variant-numeric:tabular-nums}
+#splane{aspect-ratio:4/3}
+.note{font-size:.85rem;color:var(--muted);margin:8px 0 0}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>PID Tuning Lab</h1>
+    <p>Move K<sub>p</sub>, K<sub>i</sub> and K<sub>d</sub> and watch the closed-loop step response and the closed-loop poles change. Pin a response to compare before and after.</p>
+  </header>
+
+  <div class="main">
+    <section class="panel" aria-label="Controller settings">
+      <p class="label">Plant</p>
+      <select id="plant">
+        <option value="p3">Three-pole plant</option>
+        <option value="robot">Robot joint</option>
+        <option value="tank">Tank level</option>
+      </select>
+      <p class="tf" id="plantTf"></p>
+
+      <div class="sect">
+        <p class="label">Gains</p>
+        <div class="gain"><b>K<sub>p</sub></b><input type="range" id="kpR" step="0.1"><input type="number" id="kpN" step="0.1" min="0"><span class="what">present: push on the error now</span></div>
+        <div class="gain"><b>K<sub>i</sub></b><input type="range" id="kiR" step="0.1"><input type="number" id="kiN" step="0.1" min="0"><span class="what">past: add up the error</span></div>
+        <div class="gain"><b>K<sub>d</sub></b><input type="range" id="kdR" step="0.05"><input type="number" id="kdN" step="0.05" min="0"><span class="what">future: react to how fast it changes</span></div>
+        <div class="ctrl" id="ctrlTf"></div>
+      </div>
+
+      <div class="sect">
+        <p class="label">Presets</p>
+        <div class="presets" id="presets"></div>
+      </div>
+
+      <div class="sect">
+        <p class="label">Compare</p>
+        <div class="presets">
+          <button class="primary" id="pinBtn" type="button">Pin this response</button>
+          <button id="clearBtn" type="button">Clear pin</button>
+        </div>
+        <p class="note" id="pinNote">Nothing pinned yet.</p>
+      </div>
+    </section>
+
+    <div style="display:grid;gap:18px;min-width:0">
+      <section class="panel" aria-label="Step response">
+        <div class="scope-head">
+          <h2>Closed-loop unit step response</h2>
+          <span class="status ok" id="status">Stable</span>
+        </div>
+        <canvas id="scope" role="img" aria-label="Step response plot"></canvas>
+        <div class="legend"><span><i></i>y(t)</span><span><i class="ref"></i>reference r = 1</span><span id="pinLeg" hidden><i class="pin"></i>pinned</span></div>
+      </section>
+
+      <div class="lower">
+        <section class="panel" aria-label="Performance">
+          <p class="label">Step response numbers</p>
+          <div class="tiles">
+            <div class="tile"><div class="label">Overshoot</div><div class="v" id="mOS">–</div><div class="d" id="dOS"></div></div>
+            <div class="tile"><div class="label">Settling time (2%)</div><div class="v" id="mTs">–</div><div class="d" id="dTs"></div></div>
+            <div class="tile"><div class="label">Rise time (10–90%)</div><div class="v" id="mTr">–</div><div class="d" id="dTr"></div></div>
+            <div class="tile"><div class="label">Steady-state error</div><div class="v" id="mEss">–</div><div class="d" id="dEss"></div></div>
+          </div>
+          <p class="note">Arrows compare with the pinned response: red means it got worse, green better.</p>
+        </section>
+        <section class="panel" aria-label="Pole map">
+          <p class="label">s-plane</p>
+          <canvas id="splane" role="img" aria-label="Closed-loop pole map"></canvas>
+          <div class="poles" id="poleList"></div>
+          <p class="note">● closed-loop poles &nbsp; × plant poles &nbsp; ○ controller zeros</p>
+        </section>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+// ---------- plants ----------
+const PLANTS = {
+  p3:   {N:[1], D:[1,6,11,6], tf:"G(s) = 1 / [(s+1)(s+2)(s+3)]", r:{kp:80,ki:80,kd:25},
+         presets:[["P",10,0,0],["PI",15,10,0],["PID",15,10,6],["Z–N ultimate gain",36,38,8.5],["Z–N reaction curve",37.7,43.8,8.1],["Fine-tuned",30,20,12]], start:[15,10,6]},
+  robot:{N:[1], D:[1,2,0], tf:"G(s) = 1 / [s(s+2)]", r:{kp:50,ki:30,kd:15},
+         presets:[["P, 5% overshoot",2.1,0,0],["P, fast",15.6,0,0],["PD",15.6,0,3.45],["PID",15.6,5,3.45]], start:[15.6,0,3.45]},
+  tank: {N:[2], D:[5,1], tf:"G(s) = 2 / (5s + 1)", r:{kp:30,ki:10,kd:5},
+         presets:[["P",10,0,0],["PI",10,2,0],["PI, more I",10,6,0]], start:[10,2,0]}
+};
+// ---------- complex + polynomial helpers ----------
+const C=(re,im=0)=>({re,im});
+const cadd=(a,b)=>C(a.re+b.re,a.im+b.im), csub=(a,b)=>C(a.re-b.re,a.im-b.im);
+const cmul=(a,b)=>C(a.re*b.re-a.im*b.im,a.re*b.im+a.im*b.re);
+const cdiv=(a,b)=>{const d=b.re*b.re+b.im*b.im||1e-300;return C((a.re*b.re+a.im*b.im)/d,(a.im*b.re-a.re*b.im)/d)};
+const cabs=a=>Math.hypot(a.re,a.im);
+function trim(p){let i=0;while(i<p.length-1&&Math.abs(p[i])<1e-12)i++;return p.slice(i)}
+function pmul(a,b){const r=new Array(a.length+b.length-1).fill(0);a.forEach((x,i)=>b.forEach((y,j)=>r[i+j]+=x*y));return r}
+function padd(a,b){const n=Math.max(a.length,b.length),r=new Array(n).fill(0);a.forEach((x,i)=>r[n-a.length+i]+=x);b.forEach((x,i)=>r[n-b.length+i]+=x);return r}
+function roots(p){
+  p=trim(p); const n=p.length-1; if(n<1) return [];
+  const a=p.map(x=>x/p[0]);
+  let z=[]; const R=1+Math.max(...a.slice(1).map(Math.abs));
+  for(let k=0;k<n;k++) z.push(C(R*0.9*Math.cos(2*Math.PI*k/n+0.4),R*0.9*Math.sin(2*Math.PI*k/n+0.4)));
+  const ev=x=>a.reduce((acc,c)=>cadd(cmul(acc,x),C(c)),C(0));
+  for(let it=0;it<800;it++){
+    let mx=0;
+    z=z.map((zi,i)=>{let den=C(1);z.forEach((zj,j)=>{if(i!==j)den=cmul(den,csub(zi,zj))});const d=cdiv(ev(zi),den);mx=Math.max(mx,cabs(d));return csub(zi,d)});
+    if(mx<1e-13) break;
+  }
+  return z.map(c=>Math.abs(c.im)<1e-7*Math.max(1,cabs(c))?C(c.re,0):c);
+}
+// ---------- closed loop ----------
+function build(pl,kp,ki,kd){
+  let cn, cd;
+  if(ki!==0){cn=trim([kd,kp,ki]);cd=[1,0]} else {cn=trim([kd,kp]);cd=[1]}
+  const Ln=pmul(cn,pl.N), Ld=pmul(cd,pl.D);
+  const A=trim(padd(Ld,Ln)), B=trim(Ln);
+  return {A,B,cn,cd,poles:roots(A),zeros:(cn.length>1?roots(cn):[]),plantPoles:roots(pl.D).concat(ki!==0?[C(0)]:[])};
+}
+function simulate(A,B,Tend){
+  const n=A.length-1; const a=A.map(x=>x/A[0]); let b=B.map(x=>x/A[0]);
+  while(b.length<n+1) b.unshift(0);
+  const d=b[0]; const bt=b.map((x,i)=>x-d*a[i]);
+  const c=[]; for(let i=1;i<=n;i++) c.push(bt[n+1-i]);       // c[0] multiplies x1 (s^0)
+  const rates=roots(A).map(cabs); const fast=Math.max(1e-3,...rates);
+  let dt=Math.min(Tend/2500,0.25/fast); const steps=Math.min(80000,Math.ceil(Tend/dt)); dt=Tend/steps;
+  const f=x=>{const dx=new Array(n);for(let i=0;i<n-1;i++)dx[i]=x[i+1];let s=1;for(let i=0;i<n;i++)s-=a[n-i]*x[i];dx[n-1]=s;return dx};
+  let x=new Array(n).fill(0); const out=[]; const every=Math.max(1,Math.floor(steps/1500));
+  const yOf=x=>{let y=d;for(let i=0;i<n;i++)y+=c[i]*x[i];return y};
+  for(let k=0;k<=steps;k++){
+    if(k%every===0||k===steps) out.push([k*dt,yOf(x)]);
+    const k1=f(x),k2=f(x.map((v,i)=>v+dt/2*k1[i])),k3=f(x.map((v,i)=>v+dt/2*k2[i])),k4=f(x.map((v,i)=>v+dt*k3[i]));
+    x=x.map((v,i)=>v+dt/6*(k1[i]+2*k2[i]+2*k3[i]+k4[i]));
+    if(!isFinite(x[0])||Math.abs(yOf(x))>1e6){out.push([(k+1)*dt,NaN]);break}
+  }
+  return out;
+}
+function metrics(resp,A,B,stable){
+  if(!stable) return null;
+  const yf=B[B.length-1]/A[A.length-1];
+  let ymax=-Infinity; resp.forEach(([,y])=>{if(y>ymax)ymax=y});
+  const os=yf>1e-9?Math.max(0,(ymax-yf)/Math.abs(yf)*100):0;
+  let t10=null,t90=null; for(const [t,y] of resp){if(t10===null&&y>=0.1*yf)t10=t;if(t90===null&&y>=0.9*yf){t90=t;break}}
+  let ts=0; for(let i=resp.length-1;i>=0;i--){if(Math.abs(resp[i][1]-yf)>0.02*Math.abs(yf)){ts=resp[Math.min(i+1,resp.length-1)][0];break}}
+  return {os,ts,tr:(t10!==null&&t90!==null)?t90-t10:null,ess:1-yf};
+}
+// ---------- DOM ----------
+const $=id=>document.getElementById(id);
+const els={kp:[$("kpR"),$("kpN")],ki:[$("kiR"),$("kiN")],kd:[$("kdR"),$("kdN")]};
+let plantKey="p3", pinned=null, last=null;
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt=(v,u="",dg=2)=>v===null||v===undefined||!isFinite(v)?"–":(+v).toFixed(dg)+u;
+const fmtC=z=>(Math.abs(z.im)<1e-6?z.re.toFixed(2):`${z.re.toFixed(2)} ${z.im<0?"−":"+"} j${Math.abs(z.im).toFixed(2)}`).replace(/-/g,"−");
+function g(k){return Math.max(0,parseFloat(els[k][1].value)||0)}
+function setG(k,v){els[k][0].value=v;els[k][1].value=(+v).toFixed(k==="kd"?2:1)}
+function loadPlant(key){
+  plantKey=key; const pl=PLANTS[key];
+  ["kp","ki","kd"].forEach(k=>{els[k][0].min=0;els[k][0].max=pl.r[k]});
+  $("plantTf").textContent=pl.tf;
+  const box=$("presets"); box.innerHTML="";
+  pl.presets.forEach(([name,kp,ki,kd])=>{const b=document.createElement("button");b.type="button";b.textContent=name;b.title=`Kp ${kp}, Ki ${ki}, Kd ${kd}`;b.onclick=()=>{setG("kp",kp);setG("ki",ki);setG("kd",kd);update()};box.appendChild(b)});
+  pinned=null; $("pinNote").textContent="Nothing pinned yet."; $("pinLeg").hidden=true;
+  const [a,b,c]=pl.start; setG("kp",a);setG("ki",b);setG("kd",c); update();
+}
+["kp","ki","kd"].forEach(k=>{
+  els[k][0].addEventListener("input",()=>{els[k][1].value=(+els[k][0].value).toFixed(k==="kd"?2:1);update()});
+  els[k][1].addEventListener("input",()=>{els[k][0].value=els[k][1].value;update()});
+});
+$("plant").addEventListener("change",e=>loadPlant(e.target.value));
+$("pinBtn").addEventListener("click",()=>{if(!last)return;pinned=last;$("pinNote").textContent=`Pinned: Kp ${last.k[0]}, Ki ${last.k[1]}, Kd ${last.k[2]}`;$("pinLeg").hidden=false;update()});
+$("clearBtn").addEventListener("click",()=>{pinned=null;$("pinNote").textContent="Nothing pinned yet.";$("pinLeg").hidden=true;update()});
+
+function ctrlText(kp,ki,kd,zeros){
+  const terms=[]; if(kd)terms.push(`${kd}s²`); if(kp)terms.push(`${kp}s`); if(ki)terms.push(`${ki}`);
+  let s;
+  if(ki) s=`Gc(s) = (${terms.join(" + ")||"0"}) / s`;
+  else { const t=[]; if(kd)t.push(`${kd}s`); if(kp)t.push(`${kp}`); s=`Gc(s) = ${t.join(" + ")||"0"}`; }
+  if(zeros.length) s+=`\nzeros: ${zeros.map(fmtC).join(", ")}`;
+  return s;
+}
+// ---------- drawing ----------
+function setup(cv){const r=cv.getBoundingClientRect();const dpr=window.devicePixelRatio||1;cv.width=Math.round(r.width*dpr);cv.height=Math.round(r.height*dpr);const x=cv.getContext("2d");x.setTransform(dpr,0,0,dpr,0,0);return [x,r.width,r.height]}
+function niceStep(range,n){const raw=range/n;const p=Math.pow(10,Math.floor(Math.log10(raw)));const m=raw/p;return (m<1.5?1:m<3?2:m<7?5:10)*p}
+function drawScope(resp,Tend,unstable){
+  const [x,W,H]=setup($("scope")); const L=48,R=12,T=10,Bm=34; const w=W-L-R,h=H-T-Bm;
+  let ymax=1.2,ymin=0; const series=[resp].concat(pinned?[pinned.resp]:[]);
+  series.forEach(s=>s.forEach(([t,y])=>{if(t<=Tend&&isFinite(y)){ymax=Math.max(ymax,y);ymin=Math.min(ymin,y)}}));
+  ymax=Math.min(ymax*1.05,3); ymin=Math.max(ymin,-1.5);
+  const X=t=>L+t/Tend*w, Y=y=>T+(ymax-y)/(ymax-ymin)*h;
+  x.font=`12px ${css("--mono")}`; x.fillStyle=css("--muted"); x.strokeStyle=css("--grid"); x.lineWidth=1;
+  const sx=niceStep(Tend,8), sy=niceStep(ymax-ymin,6);
+  for(let t=0;t<=Tend+1e-9;t+=sx){x.beginPath();x.moveTo(X(t),T);x.lineTo(X(t),T+h);x.stroke();x.textAlign="center";x.fillText(+t.toFixed(2),X(t),T+h+16)}
+  for(let y=Math.ceil(ymin/sy)*sy;y<=ymax+1e-9;y+=sy){x.beginPath();x.moveTo(L,Y(y));x.lineTo(L+w,Y(y));x.stroke();x.textAlign="right";x.fillText(+y.toFixed(2),L-6,Y(y)+4)}
+  x.textAlign="center"; x.fillText("time (s)",L+w/2,H-2);
+  x.save();x.beginPath();x.rect(L,T,w,h);x.clip();
+  x.setLineDash([6,5]);x.strokeStyle=css("--ref");x.lineWidth=1.5;x.beginPath();x.moveTo(L,Y(1));x.lineTo(L+w,Y(1));x.stroke();
+  const line=(s,col,lw,dash)=>{x.setLineDash(dash);x.strokeStyle=col;x.lineWidth=lw;x.beginPath();let st=false;s.forEach(([t,y])=>{if(!isFinite(y)||t>Tend)return;const yy=Math.max(-1e4,Math.min(1e4,Y(y)));st?x.lineTo(X(t),yy):(x.moveTo(X(t),yy),st=true)});x.stroke()};
+  if(pinned) line(pinned.resp,css("--pin"),2.2,[7,5]);
+  line(resp,css("--trace"),2.8,[]);
+  x.restore();
+  if(unstable){x.fillStyle=css("--bad");x.font=`600 14px ${css("--body")}`;x.textAlign="left";x.fillText("Unstable: the output grows without bound",L+10,T+20)}
+}
+function drawPlane(b){
+  const [x,W,H]=setup($("splane")); const pts=b.poles.concat(b.zeros,b.plantPoles);
+  let xr=Math.max(1,...pts.map(p=>Math.abs(p.re)))*1.15, yr=Math.max(1,...pts.map(p=>Math.abs(p.im)))*1.2;
+  const xmin=-xr, xmax=Math.max(0.6,xr*0.25); const P=10;
+  const X=v=>P+(v-xmin)/(xmax-xmin)*(W-2*P), Y=v=>H/2-v/yr*(H/2-P);
+  x.fillStyle=css("--rhp"); x.fillRect(X(0),0,W-X(0),H);
+  x.strokeStyle=css("--line"); x.lineWidth=1; x.beginPath();x.moveTo(P,H/2);x.lineTo(W-P,H/2);x.moveTo(X(0),P);x.lineTo(X(0),H-P);x.stroke();
+  x.fillStyle=css("--muted"); x.font=`11px ${css("--mono")}`; x.textAlign="right"; x.fillText("Re",W-P,H/2-6); x.textAlign="left"; x.fillText("Im",X(0)+5,P+10);
+  x.fillText("RHP",X(0)+5,H-P-4);
+  const tick=niceStep(xr,4); x.textAlign="center"; for(let v=-Math.floor(xr/tick)*tick;v<0;v+=tick){x.fillText(+v.toFixed(2),X(v),H/2+14)}
+  x.strokeStyle=css("--muted"); x.lineWidth=2; b.plantPoles.forEach(p=>{const cx=X(p.re),cy=Y(p.im);x.beginPath();x.moveTo(cx-5,cy-5);x.lineTo(cx+5,cy+5);x.moveTo(cx+5,cy-5);x.lineTo(cx-5,cy+5);x.stroke()});
+  x.strokeStyle=css("--gold"); x.lineWidth=2.2; b.zeros.forEach(z=>{x.beginPath();x.arc(X(z.re),Y(z.im),6,0,7);x.stroke()});
+  b.poles.forEach(p=>{x.fillStyle=p.re>1e-6?css("--bad"):css("--trace");x.beginPath();x.arc(X(p.re),Y(p.im),5.5,0,7);x.fill()});
+}
+// ---------- update ----------
+function delta(id,v,p,unit,lowerBetter=true){
+  const e=$(id); e.className="d"; if(!pinned||v===null||p===null||v===undefined||p===undefined){e.textContent="";return}
+  const df=v-p; if(Math.abs(df)<1e-3){e.textContent="no change";return}
+  e.textContent=(df>0?"▲ ":"▼ ")+Math.abs(df).toFixed(2)+unit+" vs pinned"; e.classList.add((df>0)===lowerBetter?"up":"down");
+}
+function update(){
+  const pl=PLANTS[plantKey]; const kp=g("kp"),ki=g("ki"),kd=g("kd");
+  const b=build(pl,kp,ki,kd);
+  const maxRe=Math.max(...b.poles.map(p=>p.re));
+  const stable=maxRe< -1e-6, marginal=!stable&&maxRe<1e-4;
+  let Tend; if(stable){const slow=Math.min(...b.poles.map(p=>Math.abs(p.re)));Tend=Math.min(40,Math.max(3,6/slow))} else Tend=10;
+  if(pinned) Tend=Math.max(Tend,pinned.Tend);
+  Tend=Math.min(Tend,40);
+  const resp=simulate(b.A,b.B,Tend);
+  const m=metrics(resp,b.A,b.B,stable);
+  last={resp,Tend,m,k:[kp,ki,kd]};
+  const st=$("status"); st.className="status "+(stable?"ok":marginal?"marg":"bad"); st.textContent=stable?"Stable":marginal?"On the edge (pole on the jω axis)":"Unstable";
+  $("mOS").textContent=m?fmt(m.os,"%",1):"–"; $("mTs").textContent=m?fmt(m.ts," s"):"–"; $("mTr").textContent=m?fmt(m.tr," s"):"–"; $("mEss").textContent=m?fmt(m.ess,"",3):"–";
+  const pm=pinned&&pinned.m;
+  delta("dOS",m&&m.os,pm&&pm.os,"%"); delta("dTs",m&&m.ts,pm&&pm.ts," s"); delta("dTr",m&&m.tr,pm&&pm.tr," s");
+  delta("dEss",m&&Math.abs(m.ess),pm&&Math.abs(pm.ess),"");
+  $("ctrlTf").textContent=ctrlText(kp,ki,kd,b.zeros);
+  $("poleList").textContent="Closed-loop poles: "+b.poles.filter(p=>p.im>=-1e-9).map(fmtC).join(",  ").replace(/\+ j/g,"± j");
+  drawScope(resp,Tend,!stable&&!marginal); drawPlane(b);
+}
+// redraw on resize and theme change
+let rt; window.addEventListener("resize",()=>{clearTimeout(rt);rt=setTimeout(update,80)});
+try{matchMedia("(prefers-color-scheme: dark)").addEventListener("change",update)}catch(e){}
+new MutationObserver(update).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme"]});
+loadPlant("p3");
+if(document.fonts&&document.fonts.ready) document.fonts.ready.then(update);
+})();
+</script>
+
+</html>
